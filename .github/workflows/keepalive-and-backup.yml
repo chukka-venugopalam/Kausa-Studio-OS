@@ -1,0 +1,44 @@
+# Two free-tier gotchas, one workflow:
+#   1. Supabase free projects auto-pause after 7 days with no API
+#      activity -- this pings it every 3 days so that never triggers.
+#   2. Supabase's free tier has NO automatic backups -- this exports
+#      the dataset (the actual sellable IP) as a safety net, since
+#      nothing else in this architecture backs it up otherwise.
+name: Keepalive and Backup
+
+on:
+  schedule:
+    - cron: "0 6 */3 * *"  # every 3 days at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase to prevent auto-pause
+        run: |
+          curl -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/keepalive_pings" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{}"
+
+  backup:
+    runs-on: ubuntu-latest
+    needs: keepalive
+    steps:
+      - name: Dump chains + chain_links + productions to a CSV artifact
+        run: |
+          curl "${{ secrets.SUPABASE_URL }}/rest/v1/chains?select=*" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -o chains-backup.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kausa-dataset-backup-${{ github.run_id }}
+          path: chains-backup.json
+          retention-days: 90
+          # A GitHub Actions artifact is a reasonable free stopgap, not
+          # a real backup strategy long-term -- graduate this to a
+          # proper off-site backup once the dataset is worth more than
+          # a 90-day retention window.
