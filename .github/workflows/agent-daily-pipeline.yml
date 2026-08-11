@@ -1,11 +1,3 @@
-# GitHub Actions is the compute layer for agent logic in this
-# architecture -- n8n handles orchestration/scheduling/approval gates,
-# this is where the actual Python runs. See ARCHITECTURE.md for why
-# that split, not a self-hosted server for the Python side.
-#
-# Runs on demand via repository_dispatch (n8n's HTTP Request node
-# triggers this by calling the GitHub API), or manually via
-# workflow_dispatch for testing.
 name: Agent Daily Pipeline
 
 on:
@@ -14,34 +6,31 @@ on:
   workflow_dispatch:
     inputs:
       agent:
-        description: "Which agent to run (verification_agent, script_agent, analytics_agent, ...)"
+        description: "Which agent to run"
         required: true
         default: "verification_agent"
+      chain_id:
+        description: "Chain ID (verification_agent)"
+        required: false
+      claim:
+        description: "Claim text (verification_agent)"
+        required: false
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
+      - run: pip install -r requirements.txt
       - name: Run agent
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           AGENT_NAME: ${{ github.event.client_payload.agent || inputs.agent }}
-          AGENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
-        run: |
-          python -m scripts.run_agent
-          # scripts/run_agent.py (not scaffolded yet) should read
-          # AGENT_NAME and AGENT_PAYLOAD, import the matching class
-          # from agents/, and call .run(**payload). Keep this dispatcher
-          # thin -- all real logic stays in agents/, so it's testable
-          # without needing a GitHub Actions run to check it.
+          CHAIN_ID: ${{ github.event.client_payload.chain_id || inputs.chain_id }}
+          CLAIM: ${{ github.event.client_payload.claim || inputs.claim }}
+        run: python -m scripts.run_agent
