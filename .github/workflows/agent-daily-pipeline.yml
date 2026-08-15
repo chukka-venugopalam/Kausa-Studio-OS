@@ -10,10 +10,10 @@ on:
         required: true
         default: "verification_agent"
       chain_id:
-        description: "Chain ID (verification_agent)"
         required: false
       claim:
-        description: "Claim text (verification_agent)"
+        required: false
+      series_name:
         required: false
 
 jobs:
@@ -33,4 +33,5 @@ jobs:
           AGENT_NAME: ${{ github.event.client_payload.agent || inputs.agent }}
           CHAIN_ID: ${{ github.event.client_payload.chain_id || inputs.chain_id }}
           CLAIM: ${{ github.event.client_payload.claim || inputs.claim }}
+          SERIES_NAME: ${{ github.event.client_payload.series_name || inputs.series_name }}
         run: python -m scripts.run_agent

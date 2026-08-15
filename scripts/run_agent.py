@@ -1,22 +1,17 @@
 """Dispatcher for agent-daily-pipeline.yml. Reads which agent to run
 and its arguments from environment variables set by the workflow,
-imports the matching class from agents/, and calls .run(). Deliberately
-thin -- all real logic stays in agents/, testable without a GitHub
-Actions run.
+imports the matching class from agents/, and calls .run(). A registry
+dict, not a growing if/elif chain -- same pattern you'll see again
+once there are more than two agents to dispatch.
 """
 import os
 
 from lib.supabase_client import get_client
 from agents.verification_agent import VerificationAgent
-
-AGENT_REGISTRY = {
-    "verification_agent": VerificationAgent,
-}
+from agents.idea_agent import IdeaAgent
 
 
 def get_or_create_brand_id() -> str:
-    # Single-brand today -- per ARCHITECTURE.md Section 7, this becomes
-    # a real lookup keyed by an input once brand #2 exists, not before.
     db = get_client()
     existing = db.table("brands").select("*").eq("slug", "kausa-test").execute()
     if existing.data:
@@ -25,22 +20,33 @@ def get_or_create_brand_id() -> str:
     return created.data[0]["id"]
 
 
+def run_verification_agent(brand_id: str):
+    return VerificationAgent(brand_id=brand_id).run(
+        chain_id=os.environ["CHAIN_ID"],
+        claim=os.environ["CLAIM"],
+    )
+
+
+def run_idea_agent(brand_id: str):
+    return IdeaAgent(brand_id=brand_id).run(
+        series_name=os.environ["SERIES_NAME"],
+    )
+
+
+DISPATCH = {
+    "verification_agent": run_verification_agent,
+    "idea_agent": run_idea_agent,
+}
+
+
 def main():
     agent_name = os.environ["AGENT_NAME"]
-    agent_cls = AGENT_REGISTRY.get(agent_name)
-    if agent_cls is None:
-        raise ValueError(f"Unknown agent: {agent_name}")
+    handler = DISPATCH.get(agent_name)
+    if handler is None:
+        raise ValueError(f"No dispatch logic for: {agent_name}")
 
     brand_id = get_or_create_brand_id()
-
-    if agent_name == "verification_agent":
-        result = agent_cls(brand_id=brand_id).run(
-            chain_id=os.environ["CHAIN_ID"],
-            claim=os.environ["CLAIM"],
-        )
-    else:
-        raise ValueError(f"No dispatch logic yet for: {agent_name}")
-
+    result = handler(brand_id)
     print("Agent result:", result)
 
 
